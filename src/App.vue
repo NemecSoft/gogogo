@@ -1,117 +1,120 @@
 <template>
-  <div class="app">
-    <header class="header">
-      <div class="container header-inner">
-        <router-link to="/" class="logo">
-          <svg class="logo-icon" viewBox="0 0 32 32" fill="none">
-            <rect width="32" height="32" rx="6" fill="#10b981"/>
-            <path d="M8 22V10l8 6-8 6ZM18 22V10l8 6-8 6Z" fill="#fff"/>
-          </svg>
-          <span>GoGoGo</span>
-        </router-link>
-        <nav class="nav">
-          <router-link to="/" class="nav-link" active-class="active">首页</router-link>
-          <router-link to="/about" class="nav-link" active-class="active">关于</router-link>
-        </nav>
+  <div class="chat-container">
+    <header class="chat-header">
+      <h1>GoGoGo 聊天室</h1>
+      <div class="user-info">
+        <span class="user-badge">{{ userName }}</span>
+        <span :class="['status', connected ? 'online' : 'offline']">
+          {{ connected ? '在线' : '离线' }}
+        </span>
       </div>
     </header>
-    <main class="main">
-      <router-view v-slot="{ Component }">
-        <transition name="fade" mode="out-in">
-          <component :is="Component" />
-        </transition>
-      </router-view>
-    </main>
-    <footer class="footer">
-      <div class="container">
-        <p>&copy; 2026 GoGoGo. Built with Vue + Vite.</p>
+
+    <main class="chat-messages" ref="messagesContainer">
+      <div v-for="(msg, index) in messages" :key="index" :class="['message', msg.type]">
+        <template v-if="msg.type === 'system'">
+          <div class="system-message">{{ msg.content }}</div>
+        </template>
+        <template v-else>
+          <div :class="['message-content', msg.userId === userId ? 'self' : 'other']">
+            <div class="message-header">
+              <span class="sender-name">{{ msg.userName }}</span>
+              <span class="message-time">{{ formatTime(msg.timestamp) }}</span>
+            </div>
+            <div class="message-body">{{ msg.content }}</div>
+          </div>
+        </template>
       </div>
+    </main>
+
+    <footer class="chat-footer">
+      <input
+        v-model="inputMessage"
+        @keyup.enter="sendMessage"
+        type="text"
+        placeholder="输入消息..."
+        class="message-input"
+        :disabled="!connected"
+      />
+      <button @click="sendMessage" :disabled="!connected || !inputMessage.trim()" class="send-button">
+        发送
+      </button>
     </footer>
   </div>
 </template>
 
-<style scoped>
-.app {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
+<script setup>import { ref, onMounted, onUnmounted, nextTick } from 'vue';
+const messages = ref([]);
+const inputMessage = ref('');
+const userId = ref('');
+const userName = ref('');
+const connected = ref(false);
+const messagesContainer = ref(null);
+let ws = null;
+const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const workerUrl = `${protocol}//${window.location.host}/chat`;
+function connect() {
+ try {
+ ws = new WebSocket(workerUrl);
+ ws.onopen = () => {
+ connected.value = true;
+ console.log('WebSocket connected');
+ };
+ ws.onmessage = (event) => {
+ const data = JSON.parse(event.data);
+ if (data.type === 'init') {
+ userId.value = data.userId;
+ userName.value = data.userName;
+ messages.value = data.messages;
+ }
+ else {
+ messages.value.push(data);
+ }
+ nextTick(() => scrollToBottom());
+ };
+ ws.onclose = () => {
+ connected.value = false;
+ console.log('WebSocket closed');
+ setTimeout(connect, 3000);
+ };
+ ws.onerror = () => {
+ connected.value = false;
+ console.log('WebSocket error');
+ };
+ }
+ catch (e) {
+ console.error('WebSocket connection failed:', e);
+ setTimeout(connect, 3000);
+ }
 }
-
-.header {
-  background: rgba(15, 23, 42, 0.9);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--color-border);
-  position: sticky;
-  top: 0;
-  z-index: 100;
+function sendMessage() {
+ if (!inputMessage.value.trim() || !connected.value)
+ return;
+ ws.send(JSON.stringify({
+ type: 'message',
+ content: inputMessage.value.trim()
+ }));
+ inputMessage.value = '';
 }
-
-.container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 24px;
+function scrollToBottom() {
+ if (messagesContainer.value) {
+ messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
+ }
 }
-
-.header-inner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 64px;
+function formatTime(timestamp) {
+ const date = new Date(timestamp);
+ return date.toLocaleTimeString('zh-CN', {
+ hour: '2-digit',
+ minute: '2-digit',
+ second: '2-digit'
+ });
 }
-
-.logo {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: var(--color-text) !important;
-}
-
-.logo-icon {
-  width: 28px;
-  height: 28px;
-}
-
-.nav {
-  display: flex;
-  gap: 8px;
-}
-
-.nav-link {
-  padding: 8px 16px;
-  border-radius: 8px;
-  color: var(--color-text-muted);
-  font-weight: 500;
-  transition: all 0.2s;
-}
-
-.nav-link:hover,
-.nav-link.active {
-  color: var(--color-text);
-  background: var(--color-surface);
-}
-
-.main {
-  flex: 1;
-}
-
-.footer {
-  background: var(--color-surface);
-  border-top: 1px solid var(--color-border);
-  text-align: center;
-  padding: 24px 0;
-  color: var(--color-text-muted);
-  font-size: 0.875rem;
-}
-
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.25s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-</style>
+onMounted(() => {
+ connect();
+});
+onUnmounted(() => {
+ if (ws) {
+ ws.close();
+ }
+});
+</script>
